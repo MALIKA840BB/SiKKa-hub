@@ -4,6 +4,7 @@ import numpy as np
 import plotly.graph_objects as go
 from collections import deque
 import random
+import io  # زدت هادي باش نتحكمو ف تنزيل الـ Excel
 
 # =====================================================
 # CONFIG & STYLE
@@ -213,7 +214,6 @@ def run_simulation(backlog_init, sim_days, ot_active, inflow_int, inflow_ext, mi
 st.title("🚀 Sikka Intelligence Hub")
 st.subheader("Smart Logistique : Suivi de la Productivité de l'Équipe")
 
-# --- SYSTÈME DE MÉMOIRE (SESSION STATE) ---
 if 'sim_done' not in st.session_state:
     st.session_state.sim_done = False
 
@@ -241,14 +241,12 @@ with st.sidebar:
     days = st.slider("Jours de Simulation", 7, 60, 30)
 
 if st.button("🚀 Lancer l'Optimisation"):
-    # On lance la simulation et on sauvegarde les résultats dans la mémoire
     hist, lots, agent_stats = run_simulation(b_init, days, ot, inflow_int, inflow_ext, min_agents, max_agents, min_cap, max_cap, pannes)
     st.session_state.df = pd.DataFrame(hist)
     st.session_state.lots = lots
     st.session_state.agent_stats = agent_stats
     st.session_state.sim_done = True
 
-# Si la simulation a déjà été lancée, on affiche les résultats stockés en mémoire
 if st.session_state.sim_done:
     df = st.session_state.df
     lots = st.session_state.lots
@@ -277,7 +275,6 @@ if st.session_state.sim_done:
     st.plotly_chart(fig, use_container_width=True)
 
     st.subheader("👥 Productivité Cumulée par Agent")
-    
     df_agents = pd.DataFrame.from_dict(agent_stats, orient='index').reset_index()
     df_agents.columns = ['Agent', 'Jours Présents', 'Production Totale']
     df_agents = df_agents.sort_values(by='Production Totale', ascending=False)
@@ -291,17 +288,11 @@ if st.session_state.sim_done:
         marker_color='#9c27b0', 
         name="Production"
     ))
-    fig2.update_layout(
-        template="plotly_white", 
-        height=400,
-        xaxis_title="Membres de l'équipe",
-        yaxis_title="Total des passeports traités"
-    )
+    fig2.update_layout(template="plotly_white", height=400, xaxis_title="Membres de l'équipe", yaxis_title="Total des passeports traités")
     st.plotly_chart(fig2, use_container_width=True)
 
     st.markdown("---")
     st.subheader("🔎 Analyse Détaillée par Agent")
-    # Maintenant, ce menu va marcher parfaitement sans rien réinitialiser
     agent_choisi = st.selectbox("Sélectionnez un membre de l'équipe :", df_agents['Agent'])
     stats_agent = df_agents[df_agents['Agent'] == agent_choisi].iloc[0]
     st.info(f"**{agent_choisi}** a été présent(e) pendant **{stats_agent['Jours Présents']} jours** et a traité un total de **{stats_agent['Production Totale']} passeports**.")
@@ -312,12 +303,32 @@ if st.session_state.sim_done:
     with st.expander("👤 Voir les détails de présence des agents"):
         st.dataframe(df_agents, use_container_width=True)
 
+    # =====================================================
+    #  MODIFICATION ICI : EXPORT EXCEL PRO SANS ERREUR
+    # =====================================================
     st.markdown("---")
     st.subheader("📥 Exporter les Résultats")
-    csv = df.to_csv(index=False).encode('utf-8')
+    
+    # تحضير ملف إكسيل حقيقي منظم في الذاكرة
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+        # الورقة الأولى: نتائج المحاكاة اليومية
+        df.to_excel(writer, sheet_name='Suivi_Quotidien', index=False)
+        # الورقة الثانية: إنتاجية الفريق
+        df_agents.to_excel(writer, sheet_name='Productivite_Agents', index=False)
+        
+        # تعديل قياس الخانات تلقائياً باش مايبقاش النص مخبي
+        for sheet_name in writer.sheets:
+            worksheet = writer.sheets[sheet_name]
+            for col in worksheet.columns:
+                max_len = max(len(str(cell.value or '')) for cell in col)
+                col_letter = col[0].column_letter
+                worksheet.column_dimensions[col_letter].width = max(max_len + 3, 12)
+
+    # زر التحميل بصيغة Excel حقيقية (.xlsx)
     st.download_button(
-        label="📊 Télécharger le Rapport Complet (CSV)",
-        data=csv,
-        file_name='rapport_simulation_sikka.csv',
-        mime='text/csv',
+        label="📊 Télécharger le Rapport Complet (Excel)",
+        data=buffer.getvalue(),
+        file_name='Rapport_Simulation_Sikka.xlsx',
+        mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )
