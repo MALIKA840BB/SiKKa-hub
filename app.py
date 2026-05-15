@@ -26,7 +26,6 @@ PROVINCES = [
     "Agadir", "Oujda", "Meknès", "Kénitra", "Tétouan", "Extérieur"
 ]
 
-# Noms de l'équipe en Français
 EQUIPE = [
     "Ahmed", "Anouar", "Chaimae", "Romayssae", "Malika", 
     "Hamza", "Mohammed", "Brahim", "Afnane", "Titrite"
@@ -103,7 +102,6 @@ def run_simulation(backlog_init, sim_days, ot_active, inflow_int, inflow_ext, mi
             action_taken = False
             current_target = 60 if (len(lot_sizes) % 2 == 0) else 20
             
-            # ÉTAPE 1 : VIP
             for prov in PROVINCES:
                 max_prov = 100 if prov == "Extérieur" else 60
                 lot_limit = min(current_target, max_prov) 
@@ -117,7 +115,6 @@ def run_simulation(backlog_init, sim_days, ot_active, inflow_int, inflow_ext, mi
                         action_taken = True
                     current_target = 60 if (len(lot_sizes) % 2 == 0) else 20
 
-            # ÉTAPE 2 : URGENTS
             for prov in PROVINCES:
                 max_prov = 100 if prov == "Extérieur" else 60
                 lot_limit = min(current_target, max_prov)
@@ -131,7 +128,6 @@ def run_simulation(backlog_init, sim_days, ot_active, inflow_int, inflow_ext, mi
                         action_taken = True
                     current_target = 60 if (len(lot_sizes) % 2 == 0) else 20
 
-            # ÉTAPE 3 : CLÔTURE FORCÉE
             for prov in PROVINCES:
                 max_prov = 100 if prov == "Extérieur" else 60
                 lot_limit = min(current_target, max_prov)
@@ -150,7 +146,6 @@ def run_simulation(backlog_init, sim_days, ot_active, inflow_int, inflow_ext, mi
                         action_taken = True
                     current_target = 60 if (len(lot_sizes) % 2 == 0) else 20
 
-            # ÉTAPE 4 : LOTS NORMAUX
             for prov in PROVINCES:
                 max_prov = 100 if prov == "Extérieur" else 60
                 lot_limit = min(current_target, max_prov)
@@ -168,7 +163,6 @@ def run_simulation(backlog_init, sim_days, ot_active, inflow_int, inflow_ext, mi
                         action_taken = True
                     current_target = 60 if (len(lot_sizes) % 2 == 0) else 20
 
-            # ÉTAPE 5 : LOTS BACKLOG
             for prov in PROVINCES:
                 max_prov = 100 if prov == "Extérieur" else 60
                 lot_limit = min(current_target, max_prov)
@@ -219,6 +213,10 @@ def run_simulation(backlog_init, sim_days, ot_active, inflow_int, inflow_ext, mi
 st.title("🚀 Sikka Intelligence Hub")
 st.subheader("Smart Logistique : Suivi de la Productivité de l'Équipe")
 
+# --- SYSTÈME DE MÉMOIRE (SESSION STATE) ---
+if 'sim_done' not in st.session_state:
+    st.session_state.sim_done = False
+
 with st.sidebar:
     st.header("⚙️ Flux Entrant")
     inflow_int = st.number_input("MI (Intérieur)", value=4500, step=100)
@@ -243,8 +241,18 @@ with st.sidebar:
     days = st.slider("Jours de Simulation", 7, 60, 30)
 
 if st.button("🚀 Lancer l'Optimisation"):
+    # On lance la simulation et on sauvegarde les résultats dans la mémoire
     hist, lots, agent_stats = run_simulation(b_init, days, ot, inflow_int, inflow_ext, min_agents, max_agents, min_cap, max_cap, pannes)
-    df = pd.DataFrame(hist)
+    st.session_state.df = pd.DataFrame(hist)
+    st.session_state.lots = lots
+    st.session_state.agent_stats = agent_stats
+    st.session_state.sim_done = True
+
+# Si la simulation a déjà été lancée, on affiche les résultats stockés en mémoire
+if st.session_state.sim_done:
+    df = st.session_state.df
+    lots = st.session_state.lots
+    agent_stats = st.session_state.agent_stats
 
     st.subheader("📈 KPIs Globaux")
     c1, c2, c3, c4 = st.columns(4)
@@ -254,9 +262,12 @@ if st.button("🚀 Lancer l'Optimisation"):
     c3.metric("🚨 Clôtures Forcées", f"{df['Clôtures_Forcées'].mean():.1f}/jr", "Lots < 40 sauvés")
     c4.metric("⚡ Capacité Moyenne", f"{df['Capacité_Jour'].mean():.0f}/jr")
 
-    # ---------------------------------------------------------
-    # GRAPHIQUE 1 : Production Quotidienne
-    # ---------------------------------------------------------
+    st.markdown("---")
+    if df['Backlog_Restant'].iloc[-1] > b_init:
+        st.markdown('<div class="alert-red">⚠️ <strong>Alerte :</strong> Le Backlog est en train d\'augmenter ! La capacité actuelle est insuffisante pour absorber le flux.</div>', unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="alert-green">✅ <strong>Situation Maîtrisée :</strong> L\'équipe arrive à réduire le Backlog de manière efficace.</div>', unsafe_allow_html=True)
+
     st.subheader("📊 Évolution de la Production Quotidienne")
     fig = go.Figure()
     fig.add_trace(go.Bar(x=df['Jour'], y=df['Nouveaux_Traités'], name="Nouveaux", marker_color='#34a853'))
@@ -265,9 +276,6 @@ if st.button("🚀 Lancer l'Optimisation"):
     fig.update_layout(barmode='stack', template="plotly_white", height=450)
     st.plotly_chart(fig, use_container_width=True)
 
-    # ---------------------------------------------------------
-    # GRAPHIQUE 2 : Productivité par Agent
-    # ---------------------------------------------------------
     st.subheader("👥 Productivité Cumulée par Agent")
     
     df_agents = pd.DataFrame.from_dict(agent_stats, orient='index').reset_index()
@@ -291,11 +299,25 @@ if st.button("🚀 Lancer l'Optimisation"):
     )
     st.plotly_chart(fig2, use_container_width=True)
 
-    # ---------------------------------------------------------
-    # DÉTAILS
-    # ---------------------------------------------------------
+    st.markdown("---")
+    st.subheader("🔎 Analyse Détaillée par Agent")
+    # Maintenant, ce menu va marcher parfaitement sans rien réinitialiser
+    agent_choisi = st.selectbox("Sélectionnez un membre de l'équipe :", df_agents['Agent'])
+    stats_agent = df_agents[df_agents['Agent'] == agent_choisi].iloc[0]
+    st.info(f"**{agent_choisi}** a été présent(e) pendant **{stats_agent['Jours Présents']} jours** et a traité un total de **{stats_agent['Production Totale']} passeports**.")
+
     with st.expander("📋 Voir les détails d'exécution (Tableau)"):
         st.dataframe(df, use_container_width=True)
         
     with st.expander("👤 Voir les détails de présence des agents"):
         st.dataframe(df_agents, use_container_width=True)
+
+    st.markdown("---")
+    st.subheader("📥 Exporter les Résultats")
+    csv = df.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="📊 Télécharger le Rapport Complet (CSV)",
+        data=csv,
+        file_name='rapport_simulation_sikka.csv',
+        mime='text/csv',
+    )
