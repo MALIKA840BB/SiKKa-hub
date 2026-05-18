@@ -52,7 +52,7 @@ def run_simulation(backlog_init, sim_days, ot_active, inflow_int, inflow_ext, mi
 
     history = []
     lot_sizes = []
-    delays = [] # حساب مدة الانتظار
+    delays = []
     p_id_counter = 0
     agent_stats = {nom: {"Jours_Présent": 0, "Production_Totale": 0} for nom in EQUIPE}
 
@@ -71,7 +71,6 @@ def run_simulation(backlog_init, sim_days, ot_active, inflow_int, inflow_ext, mi
         quota_nouveaux = int(daily_cap * 0.80)
         quota_backlog = int(daily_cap * 0.20)
 
-        # Arrivées
         for _ in range(inflow_int):
             prov = random.choice(PROVINCES[:-1]) 
             rand = random.random()
@@ -89,12 +88,10 @@ def run_simulation(backlog_init, sim_days, ot_active, inflow_int, inflow_ext, mi
 
         d_out = 0; d_vip = 0; d_nouv = 0; d_anc = 0; forced_closures = 0
 
-        # Logic de traitement
         while d_out < daily_cap:
             action_taken = False
             current_target = 60 if (len(lot_sizes) % 2 == 0) else 20
             
-            # Priorité 1: VIP & Urgents
             for prov in PROVINCES:
                 limit = min(current_target, 100 if prov == "Extérieur" else 60)
                 for q in [q_vip[prov], q_urgent[prov]]:
@@ -106,17 +103,15 @@ def run_simulation(backlog_init, sim_days, ot_active, inflow_int, inflow_ext, mi
                             d_out += 1; d_vip += 1; c += 1
                         if c > 0: lot_sizes.append(c); action_taken = True
 
-            # Priorité 2: Forçage Retard (> 2j)
             for prov in PROVINCES:
                 if q_nouv[prov] and (day - q_nouv[prov][0].arrival_day) >= 2 and d_out < daily_cap:
                     c = 0
-                    while q_nouv[prov] and c < current_target and d_out < daily_cap:
+                    while q_nouv[prov] and c < current_target Glen d_out < daily_cap:
                         p = q_nouv[prov].popleft()
                         delays.append(day - p.arrival_day)
                         d_out += 1; d_nouv += 1; c += 1
                     if c > 0: lot_sizes.append(c); forced_closures += 1; action_taken = True
 
-            # Priorité 3: Nouveaux Lots Standards
             for prov in PROVINCES:
                 if len(q_nouv[prov]) >= current_target and d_out + current_target <= daily_cap:
                     for _ in range(current_target):
@@ -125,7 +120,6 @@ def run_simulation(backlog_init, sim_days, ot_active, inflow_int, inflow_ext, mi
                         d_out += 1; d_nouv += 1
                     lot_sizes.append(current_target); action_taken = True
 
-            # Priorité 4: Backlog
             for prov in PROVINCES:
                 if len(q_backlog[prov]) >= current_target and d_out + current_target <= daily_cap:
                     for _ in range(current_target):
@@ -136,28 +130,32 @@ def run_simulation(backlog_init, sim_days, ot_active, inflow_int, inflow_ext, mi
 
             if not action_taken: break
 
-        # Stats Agents
         if d_out > 0 and nb_presents > 0:
             prod = d_out // nb_presents
             for idx, name in enumerate(present_agents):
                 agent_stats[name]["Jours_Présent"] += 1
                 agent_stats[name]["Production_Totale"] += prod + (1 if idx < (d_out % nb_presents) else 0)
 
-        # Backlog Restant par Province
         prov_backlog = {p: len(q_backlog[p]) + len(q_nouv[p]) + len(q_vip[p]) + len(q_urgent[p]) for p in PROVINCES}
         total_backlog = sum(prov_backlog.values())
 
+        # هنا رجّعنا كاع السطور بالتفصيل الممل للـ Excel والواجهة بجوج
         history.append({
             "Jour": day + 1,
-            "Staff": nb_presents,
-            "Output": d_out,
-            "VIP_Urg": d_vip,
-            "Backlog_Total": total_backlog,
-            "DMT_Jour": np.mean(delays[-d_out:]) if d_out > 0 else 0,
-            **prov_backlog
+            "Staff_Présent": nb_presents,
+            "Capacité_Jour": daily_cap,
+            "Clôtures_Forcées": forced_closures,
+            "VIP_Urgent_Traités": d_vip,
+            "Nouveaux_Traités": d_nouv,
+            "Anciens_Backlog_Traités": d_anc,
+            "Output_Total": d_out,
+            "Backlog_Restant_Total": total_backlog,
+            "Moyenne_Lot": np.mean(lot_sizes) if lot_sizes else 0,
+            "DMT_Moyen_Jour (Jours)": np.mean(delays[-d_out:]) if d_out > 0 else 0,
+            **{f"Backlog_{p}": v for p, v in prov_backlog.items()}
         })
 
-    return history, lot_sizes, agent_stats, prov_backlog, delays
+    return history, lot_sizes, agent_stats, prov_backlog, delays, sim_days
 
 # =====================================================
 # UI
@@ -182,12 +180,13 @@ with st.sidebar:
     pannes = st.checkbox("Risques Pannes", value=True)
 
 if st.button("🚀 Lancer l'Analyse Intelligente"):
-    hist, lots, agent_stats, last_prov, all_delays = run_simulation(b_init, days, ot, inflow_int, inflow_ext, 7, 10, 800, 1200, pannes)
+    hist, lots, agent_stats, last_prov, all_delays, total_sim_days = run_simulation(b_init, days, ot, inflow_int, inflow_ext, 7, 10, 800, 1200, pannes)
     st.session_state.df = pd.DataFrame(hist)
     st.session_state.lots = lots
     st.session_state.agent_stats = agent_stats
     st.session_state.last_prov = last_prov
     st.session_state.avg_dmt = np.mean(all_delays)
+    st.session_state.total_sim_days = total_sim_days
     st.session_state.sim_done = True
 
 if st.session_state.sim_done:
@@ -198,22 +197,19 @@ if st.session_state.sim_done:
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("🎯 Moyenne Lot", f"{avg_lot:.1f}", f"{avg_lot - target_lot:.1f} vs Target")
     c2.metric("⏱️ Délai Moyen (DMT)", f"{st.session_state.avg_dmt:.2f} j", f"{st.session_state.avg_dmt - target_dmt:.2f} vs Target", delta_color="inverse")
-    c3.metric("📦 Backlog Final", f"{df['Backlog_Total'].iloc[-1]:,}")
-    c4.metric("📈 Production Totale", f"{df['Output'].sum():,}")
+    c3.metric("📦 Backlog Final", f"{df['Backlog_Restant_Total'].iloc[-1]:,}")
+    c4.metric("📈 Production Totale", f"{df['Output_Total'].sum():,}")
 
-    # Alerts Intelligentes
     st.markdown("### 🧠 Analyse Decisionnelle")
     if avg_lot < target_lot:
-        st.markdown(f'<div class="alert-orange">⚠️ <strong>Alerte Optimisation :</strong> La taille des lots ({avg_lot:.1f}) est inférieure à l\'objectif ({target_lot}). Cause : Priorisation élevée des urgences ou Backlog par province trop dispersé.</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="alert-orange">⚠️ <strong>Alerte Optimisation :</strong> La taille des lots ({avg_lot:.1f}) est inférieure à l\'objectif ({target_lot}).</div>', unsafe_allow_html=True)
     else:
-        st.markdown('<div class="alert-green">✅ <strong>Performance Lot :</strong> L\'objectif de regroupement est atteint. Rendement machine optimal.</div>', unsafe_allow_html=True)
+        st.markdown('<div class="alert-green">✅ <strong>Performance Lot :</strong> L\'objectif de regroupement est atteint.</div>', unsafe_allow_html=True)
 
-    # ROW 2: Graphs
     col_left, col_right = st.columns([2, 1])
-    
     with col_left:
         st.subheader("📊 Flux de Production Quotidien")
-        fig = px.area(df, x="Jour", y="Output", title="Évolution de la capacité de sortie")
+        fig = px.area(df, x="Jour", y="Output_Total", title="Évolution de la capacité de sortie")
         st.plotly_chart(fig, use_container_width=True)
 
     with col_right:
@@ -222,18 +218,50 @@ if st.session_state.sim_done:
         fig_pie = px.pie(prov_data, values='Reste', names='Province', hole=0.4, color_discrete_sequence=px.colors.sequential.RdBu)
         st.plotly_chart(fig_pie, use_container_width=True)
 
-    # ROW 3: Agents
     st.subheader("👥 Performance de l'Équipe")
     df_ag = pd.DataFrame.from_dict(st.session_state.agent_stats, orient='index').reset_index().rename(columns={'index': 'Agent'})
-    fig_ag = px.bar(df_ag, x='Agent', y='Production_Totale', color='Production_Totale', text_auto=True)
+    df_ag['Jours Présents'] = df_ag['Jours_Présent']
+    df_ag['Jours Absents'] = st.session_state.total_sim_days - df_ag['Jours Présents']
+    df_ag['Production Totale'] = df_ag['Production_Totale']
+
+    fig_ag = px.bar(df_ag, x='Agent', y='Production Totale', color='Production Totale', text_auto=True)
     st.plotly_chart(fig_ag, use_container_width=True)
 
-    # EXPORT
     st.markdown("---")
+    st.subheader("🔎 Analyse Détaillée par Agent")
+    agent_choisi = st.selectbox("Sélectionnez un membre de l'équipe :", df_ag['Agent'])
+    stats_agent = df_ag[df_ag['Agent'] == agent_choisi].iloc[0]
+    st.info(f"👤 **{agent_choisi}** : Présent(e) pendant **{stats_agent['Jours Présents']} jours** | Absent(e) pendant **{stats_agent['Jours Absents']} jours** | Production de **{stats_agent['Production Totale']:,}**.")
+
+    with st.expander("📋 Voir les détails d'exécution (Tableau Complet نهار بنهار)"):
+        st.dataframe(df, use_container_width=True)
+
+    # =====================================================
+    # EXPORT EXCEL ULTRA DETAILLÉ (هنا فين رجع حسن بزاااف)
+    # =====================================================
+    st.markdown("---")
+    st.subheader("📥 Exporter les Résultats")
+    
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-        df.to_excel(writer, sheet_name='Simulation_Data', index=False)
-        df_ag.to_excel(writer, sheet_name='Staff_Performance', index=False)
-        prov_data.to_excel(writer, sheet_name='Backlog_By_Province', index=False)
+        # الصفحة 1 فيها كاع التفاصيل المملة اليومية كيف كان ف الكود القديم وزيادة
+        df.to_excel(writer, sheet_name='Suivi_Quotidien_Complet', index=False)
+        # الصفحة 2 فيها تفاصيل الموظفين والغياب والحضور
+        df_ag[['Agent', 'Jours Présents', 'Jours Absents', 'Production Totale']].to_excel(writer, sheet_name='Performance_Personnel', index=False)
+        # الصفحة 3 فيها توزيع المدن
+        prov_data.to_excel(writer, sheet_name='Backlog_Par_Province', index=False)
+        
+        # موازنة حجم الخانات تلقائياً باش يبان التقرير نقي ومقاد للشاف
+        for sheet_name in writer.sheets:
+            worksheet = writer.sheets[sheet_name]
+            for col in worksheet.columns:
+                max_len = max(len(str(cell.value or '')) for cell in col)
+                col_letter = col[0].column_letter
+                worksheet.column_dimensions[col_letter].width = max(max_len + 3, 12)
     
-    st.download_button(label="📥 Télécharger le Rapport Décisionnel (Excel)", data=buffer.getvalue(), file_name='Sikka_Intelligence_Report.xlsx')
+    st.download_button(
+        label="📥 Télécharger le Rapport Excel Complet (Version Pro)", 
+        data=buffer.getvalue(), 
+        file_name='Sikka_Intelligence_Report_v2.xlsx',
+        mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
