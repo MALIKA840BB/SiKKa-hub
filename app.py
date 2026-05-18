@@ -106,7 +106,8 @@ def run_simulation(backlog_init, sim_days, ot_active, inflow_int, inflow_ext, mi
             for prov in PROVINCES:
                 if q_nouv[prov] and (day - q_nouv[prov][0].arrival_day) >= 2 and d_out < daily_cap:
                     c = 0
-                    while q_nouv[prov] and c < current_target Glen d_out < daily_cap:
+                    # تم تصليح الخطأ هنا (رديناها and عوض Glen)
+                    while q_nouv[prov] and c < current_target and d_out < daily_cap:
                         p = q_nouv[prov].popleft()
                         delays.append(day - p.arrival_day)
                         d_out += 1; d_nouv += 1; c += 1
@@ -139,7 +140,6 @@ def run_simulation(backlog_init, sim_days, ot_active, inflow_int, inflow_ext, mi
         prov_backlog = {p: len(q_backlog[p]) + len(q_nouv[p]) + len(q_vip[p]) + len(q_urgent[p]) for p in PROVINCES}
         total_backlog = sum(prov_backlog.values())
 
-        # هنا رجّعنا كاع السطور بالتفصيل الممل للـ Excel والواجهة بجوج
         history.append({
             "Jour": day + 1,
             "Staff_Présent": nb_presents,
@@ -193,7 +193,6 @@ if st.session_state.sim_done:
     df = st.session_state.df
     avg_lot = np.mean(st.session_state.lots)
     
-    # ROW 1: KPIs
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("🎯 Moyenne Lot", f"{avg_lot:.1f}", f"{avg_lot - target_lot:.1f} vs Target")
     c2.metric("⏱️ Délai Moyen (DMT)", f"{st.session_state.avg_dmt:.2f} j", f"{st.session_state.avg_dmt - target_dmt:.2f} vs Target", delta_color="inverse")
@@ -237,21 +236,17 @@ if st.session_state.sim_done:
         st.dataframe(df, use_container_width=True)
 
     # =====================================================
-    # EXPORT EXCEL ULTRA DETAILLÉ (هنا فين رجع حسن بزاااف)
+    # EXPORT EXCEL ULTRA DETAILLÉ (النسخة اللي كيبغي الشاف)
     # =====================================================
     st.markdown("---")
     st.subheader("📥 Exporter les Résultats")
     
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-        # الصفحة 1 فيها كاع التفاصيل المملة اليومية كيف كان ف الكود القديم وزيادة
         df.to_excel(writer, sheet_name='Suivi_Quotidien_Complet', index=False)
-        # الصفحة 2 فيها تفاصيل الموظفين والغياب والحضور
         df_ag[['Agent', 'Jours Présents', 'Jours Absents', 'Production Totale']].to_excel(writer, sheet_name='Performance_Personnel', index=False)
-        # الصفحة 3 فيها توزيع المدن
         prov_data.to_excel(writer, sheet_name='Backlog_Par_Province', index=False)
         
-        # موازنة حجم الخانات تلقائياً باش يبان التقرير نقي ومقاد للشاف
         for sheet_name in writer.sheets:
             worksheet = writer.sheets[sheet_name]
             for col in worksheet.columns:
