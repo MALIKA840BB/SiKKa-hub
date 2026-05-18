@@ -106,7 +106,6 @@ def run_simulation(backlog_init, sim_days, ot_active, inflow_int, inflow_ext, mi
             for prov in PROVINCES:
                 if q_nouv[prov] and (day - q_nouv[prov][0].arrival_day) >= 2 and d_out < daily_cap:
                     c = 0
-                    # تم تصليح الخطأ هنا (رديناها and عوض Glen)
                     while q_nouv[prov] and c < current_target and d_out < daily_cap:
                         p = q_nouv[prov].popleft()
                         delays.append(day - p.arrival_day)
@@ -192,15 +191,22 @@ if st.button("🚀 Lancer l'Analyse Intelligente"):
 if st.session_state.sim_done:
     df = st.session_state.df
     avg_lot = np.mean(st.session_state.lots)
+    backlog_final = df['Backlog_Restant_Total'].iloc[-1]
     
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("🎯 Moyenne Lot", f"{avg_lot:.1f}", f"{avg_lot - target_lot:.1f} vs Target")
     c2.metric("⏱️ Délai Moyen (DMT)", f"{st.session_state.avg_dmt:.2f} j", f"{st.session_state.avg_dmt - target_dmt:.2f} vs Target", delta_color="inverse")
-    c3.metric("📦 Backlog Final", f"{df['Backlog_Restant_Total'].iloc[-1]:,}")
+    c3.metric("📦 Backlog Final", f"{backlog_final:,}")
     c4.metric("📈 Production Totale", f"{df['Output_Total'].sum():,}")
 
     st.markdown("### 🧠 Analyse Decisionnelle")
-    if avg_lot < target_lot:
+    
+    # =====================================================
+    # الـ OPTION الجديدة: إنذار الخنق الأحمر فـ البلاصة
+    # =====================================================
+    if backlog_final >= 35000:
+        st.markdown(f'<div class="alert-red">🚨 <strong>Alerte Critique : Backlog Congestionné ({backlog_final:,} &gt;= 35,000) !</strong> Dar As-Sikka est saturée. La capacité actuelle ne permet pas d\'absorber le flux. Il est fortement recommandé d\'augmenter les effectifs (Staff Max) ou de forcer les heures supplémentaires.</div>', unsafe_allow_html=True)
+    elif avg_lot < target_lot:
         st.markdown(f'<div class="alert-orange">⚠️ <strong>Alerte Optimisation :</strong> La taille des lots ({avg_lot:.1f}) est inférieure à l\'objectif ({target_lot}).</div>', unsafe_allow_html=True)
     else:
         st.markdown('<div class="alert-green">✅ <strong>Performance Lot :</strong> L\'objectif de regroupement est atteint.</div>', unsafe_allow_html=True)
@@ -235,9 +241,6 @@ if st.session_state.sim_done:
     with st.expander("📋 Voir les détails d'exécution (Tableau Complet نهار بنهار)"):
         st.dataframe(df, use_container_width=True)
 
-    # =====================================================
-    # EXPORT EXCEL ULTRA DETAILLÉ (النسخة اللي كيبغي الشاف)
-    # =====================================================
     st.markdown("---")
     st.subheader("📥 Exporter les Résultats")
     
